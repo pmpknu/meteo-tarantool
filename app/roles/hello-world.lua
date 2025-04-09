@@ -9,12 +9,12 @@ local function init(opts) -- luacheck: no unused args
     -- end
 
     local httpd = assert(cartridge.service_get('httpd'), "Failed to get httpd service")
-    httpd:route({method = 'GET', path = '/hello'}, function()
+    httpd:route({method = 'GET', path = '/api/meteo'}, function()
         return {body = func()}
     end)
 
     local log = require('log')
-    log.info('Hello world!')
+    log.info('Meteo API service initialized')
 
     return true
 end
@@ -35,7 +35,7 @@ local function apply_config(conf, opts) -- luacheck: no unused args
 end
 
 return {
-    role_name = 'Hello world!',
+    role_name = 'Meteo API',
     init = init,
     stop = stop,
     validate_config = validate_config,
