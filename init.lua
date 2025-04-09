@@ -63,3 +63,12 @@ metrics.set_export({
         format = 'health'
     }
 })
+
+-- configure rust hadler
+local api = require('app.api')
+local success, err = api.init()
+
+if not success then
+    print("Rust API Init error:", err)
+    return
+end

@@ -1,8 +1,5 @@
-local rust_lib = box.lib.load("libmeteo_handler")
-
-local func = rust_lib:load("get_api_string")
-
 local cartridge = require('cartridge')
+local api = require('app.api')
 
 local function init(opts) -- luacheck: no unused args
     -- if opts.is_master then
@@ -10,7 +7,7 @@ local function init(opts) -- luacheck: no unused args
 
     local httpd = assert(cartridge.service_get('httpd'), "Failed to get httpd service")
     httpd:route({method = 'GET', path = '/api/meteo'}, function()
-        return {body = func()}
+        return {body = api.get_api_string()}
     end)
 
     local log = require('log')
