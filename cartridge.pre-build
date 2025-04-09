@@ -3,6 +3,6 @@
 # Simple pre-build script
 # Will be ran before "tarantoolctl rocks make" on application build
 # Could be useful to install non-standart rocks modules
-
+cp rust/target/release/libmeteo_handler.so .rocks/lib/tarantool/
 # For example:
 # tarantoolctl rocks make --chdir ./third_party/my-custom-rock-module
