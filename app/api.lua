@@ -1,5 +1,6 @@
 local rust_funcs = {
-  "get_api_string"
+  "get_geocoding",
+  "get_weather",
 }
 
 local api = {}

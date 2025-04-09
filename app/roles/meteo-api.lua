@@ -6,8 +6,32 @@ local function init(opts) -- luacheck: no unused args
     -- end
 
     local httpd = assert(cartridge.service_get('httpd'), "Failed to get httpd service")
-    httpd:route({method = 'GET', path = '/api/meteo'}, function()
-        return {body = api.get_api_string()}
+    httpd:route({method = 'GET', path = '/api/weather'}, function(req)
+        local lat = tonumber(req:query_param('lat'))
+        local lon = tonumber(req:query_param('lon'))
+        
+        if not lat or not lon then
+            return {status = 400, body = 'Missing or invalid lat/lon parameters'}
+        end
+
+        local err, res = api.get_weather(lat, lon)
+        if err then
+          return {status = 400, body = err}
+        end
+        return {body = res}
+    end)
+
+    httpd:route({method = 'GET', path = '/api/geocoding'}, function(req)
+        local city = req:query_param('city')
+
+        if not city or city = '' then
+          return {status = 400, body = 'Missing city parameter'}
+
+        local err, res = api.get_geocoding(city)
+        if err then
+            return {status = 400, body = err}
+        end
+        return {body = res}
     end)
 
     local log = require('log')

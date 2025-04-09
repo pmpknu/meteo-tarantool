@@ -1,16 +1,41 @@
 use tarantool::proc;
 
+// @param city
+// @return latitude, longitude
 #[proc]
-fn get_api_string() -> String {
-    let api_string = "https://api.open-meteo.com/v1/forecast?latitude=55.7558&longitude=37.6176&current=temperature_2m";
-    
+fn get_geocoding(city: &str) -> Result<(f64, f64), String> {
+    let api_string = format!(
+        "https://geocoding-api.open-meteo.com/v1/search?name={}&count=1&language=en&format=json",
+        city
+    );
+
     let client = fibreq::ClientBuilder::new().build();
-    let mut response = client.get(api_string).unwrap().send().unwrap();
+    let mut response = client.get(&api_string).unwrap().send().unwrap();
 
     println!("Status: {}", response.status());
-    if response.status().is_success() {
-        response.text().unwrap()
-    } else {
-        "bad request".to_string()
+    if let Ok(text) = response.text() {
+        println!("Body: {}", text);
+        return Ok((30.0, 30.0));
     }
+    return Err("bad :(".to_string());
+}
+
+// @param latitude, longitude
+// @return temperature
+#[proc]
+fn get_weather(latitude: f64, longitude: f64) -> Result<String, String> {
+    let api_string = format!(
+        "https://api.open-meteo.com/v1/forecast?latitude={}&longitude={}&hourly=temperature_2m&forecast_days=1",
+        latitude, longitude
+    );
+
+    let client = fibreq::ClientBuilder::new().build();
+    let mut response = client.get(&api_string).unwrap().send().unwrap();
+
+    println!("Status: {}", response.status());
+    if let Ok(text) = response.text() {
+        println!("Body: {}", text);
+        return Ok(text);
+    }
+    return Err("bad :(".to_string());
 }
