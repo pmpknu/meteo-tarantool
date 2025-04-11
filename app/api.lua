@@ -1,6 +1,5 @@
 local rust_funcs = {
-  "get_geocoding",
-  "get_weather",
+  "make_http_endpoints"
 }
 
 local api = {}
