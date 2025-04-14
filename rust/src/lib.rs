@@ -1,6 +1,9 @@
-use shors::transport::http::route::Builder;
+use shors::transport::http::route;
 use shors::transport::http::{server, Request};
 use shors::transport::Context;
+use shors::transport::rpc::client;
+use tarantool::index::{IndexOptions, IndexType};
+use tarantool::space::{Space, SpaceCreateOptions, SpaceEngineType};
 use std::error::Error;
 use tarantool::proc;
 use serde_json::{Value, json};
@@ -9,7 +12,7 @@ use std::collections::HashMap;
 
 // @param city
 // @return latitude, longitude
-fn get_geocoding(city: &str) -> Result<(f64, f64), String> {
+fn api_get_geocoding(city: &str) -> Result<(f64, f64), String> {
     let api_string = format!(
         "https://geocoding-api.open-meteo.com/v1/search?name={}&count=1&language=en&format=json",
         city
@@ -45,7 +48,101 @@ fn get_geocoding(city: &str) -> Result<(f64, f64), String> {
     return Err("Failed to get response text".to_string());
 }
 
-// @param latitude, longitude
+fn create_geocoding_space() -> Result<(), String> {
+    let space = Space::create(
+        "geocoding_cache",
+        &SpaceCreateOptions {
+            engine: SpaceEngineType::Memtx,
+            if_not_exists: true,
+            format: Some(vec![
+                tarantool::space::Field::string("city"),
+                tarantool::space::Field::array("coordinates"),
+            ]),
+            ..SpaceCreateOptions::default()
+        },
+    ).map_err(|e| format!("Failed to create geocoding_cache space: {}", e))?;
+
+    if let Err(e) = space.create_index(
+        "primary",
+        &IndexOptions {
+            r#type: Some(IndexType::Hash),
+            unique: Some(true),
+            parts: Some(vec![tarantool::index::Part::field(1)]),
+            if_not_exists: Some(true),
+            ..IndexOptions::default()
+        }
+    ) {
+        return Err(format!("Failed to create index: {}", e));
+    }
+
+    Ok(())
+}
+
+// @param city
+// @return latitude, longitude
+fn get_geocoding(city: &str) -> Result<(f64, f64), String> {
+    if let Some(space) = Space::find("geocoding_cache") {
+        if let Ok(Some(geocoding)) = space.get(&(city,)) {
+            if let Ok(coords) = geocoding.decode::<Vec<f64>>() {
+                if coords.len() >= 2 {
+                    println!("CACHED Coordinates for {}: lat: {}, lon: {}", city, coords[0], coords[1]);
+                    return Ok((coords[0], coords[1]));
+                }
+            }
+        }
+
+        let (lat, lon) = api_get_geocoding(city)?;
+        println!("API Coordinates for {}: lat: {}, lon: {}", city, lat, lon);
+
+        if let Err(e) = space.put(&(city, vec![lat, lon])) {
+            println!("Failed to cache coordinates for {}: {}", city, e);
+        }
+        Ok((lat, lon))
+    } else {
+        println!("Failed to find geocoding_cache space");
+        if let Err(e) = create_geocoding_space() {
+            println!("Failed to create geocoding_cache space: {}", e);
+            return Err(e);
+        }
+        let (lat, lon) = api_get_geocoding(city)?;
+        println!("API Coordinates for {}: lat: {}, lon: {}", city, lat, lon);
+        
+        if let Some(space) = Space::find("geocoding_cache") {
+            if let Err(e) = space.put(&(city, vec![lat, lon])) {
+                println!("Failed to cache coordinates for {}: {}", city, e);
+            }
+        } else {
+            println!("Space not found after creation");
+        }
+        Ok((lat, lon))
+    }
+}
+pub fn upsert_geocoding(city: &str) -> Result<serde_json::Value, String> {
+  let bucket_id =  1;// по широте+долгота;
+  let lua = tarantool::lua_state();
+  
+  let mut ctx = Context::new(); // Create a new Context instance
+  let resp = client::Builder::new(&lua)
+                  .shard_endpoint("get_geocoding")
+                  .call(&mut ctx, bucket_id, city);
+
+  match resp {
+      Ok(tuple) => {
+          let city: String = tuple.get(0).unwrap_or_default();
+          let latitude: f64 = tuple.get(1).unwrap_or_default();
+          let longitude: f64 = tuple.get(2).unwrap_or_default();
+
+          Ok(json!({
+              "city": city,
+              "latitude": latitude,
+              "longitude": longitude
+          }))
+      },
+      Err(e) => Err(format!("Failed to call remote procedure: {}", e))
+  }
+}
+
+// @param latitude, longitudepace::find("geocoding_cache").pk.
 // @return temperature
 fn get_weather(latitude: f64, longitude: f64) -> Result<String, String> {
     let api_string = format!(
@@ -82,7 +179,7 @@ fn get_weather(latitude: f64, longitude: f64) -> Result<String, String> {
 
 #[proc]
 pub fn make_http_endpoints() {
-    let route_group = Builder::new()
+    let route_group = route::Builder::new()
         .with_path("/api")
         .with_middleware(|route| {
             println!("got new http request to /api endpoint!");
